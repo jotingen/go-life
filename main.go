@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/faiface/pixel"
@@ -14,8 +15,8 @@ import (
 )
 
 const (
-	X     = 1024
-	Y     = 768
+	X = 1400
+	Y = 800
 )
 
 func main() {
@@ -23,6 +24,8 @@ func main() {
 }
 
 func run() {
+	var wg sync.WaitGroup
+
 	cfg := pixelgl.WindowConfig{
 		Title:  "Life",
 		Bounds: pixel.R(0, 0, X, Y),
@@ -39,12 +42,11 @@ func run() {
 
 	timestamp := time.Now().UTC()
 
-	var board [X][Y]bool
+	board := make([][]bool, X)
 	for x := 0; x < X; x++ {
+		board[x] = make([]bool, Y)
 		for y := 0; y < Y; y++ {
-			if rand.Intn(2) == 1 {
-				board[x][y] = true
-			}
+			board[x][y] = rand.Intn(2) == 0
 		}
 	}
 
@@ -53,7 +55,28 @@ func run() {
 		imd.Clear()
 		win.Clear(colornames.White)
 
-		var boardNext [X][Y]bool
+		boardNext := make([][]bool, X)
+		for x := 0; x < X; x++ {
+			boardNext[x] = make([]bool, Y)
+		}
+
+		wg.Add(16)
+		go life(0,     X/4,   0,   Y/4,   board, boardNext, &wg)
+		go life(X/4,   X/2,   0,   Y/4,   board, boardNext, &wg)
+		go life(X/2,   3*X/4, 0,   Y/4,   board, boardNext, &wg)
+		go life(3*X/4, X,     0,   Y/4,   board, boardNext, &wg)
+		go life(0,     X/4,   Y/4, Y/2,   board, boardNext, &wg)
+		go life(X/4,   X/2,   Y/4, Y/2,   board, boardNext, &wg)
+		go life(X/2,   3*X/4, Y/4, Y/2,   board, boardNext, &wg)
+		go life(3*X/4, X,     Y/4, Y/2,   board, boardNext, &wg)
+		go life(0,     X/4,   Y/2, 3*Y/4, board, boardNext, &wg)
+		go life(X/4,   X/2,   Y/2, 3*Y/4, board, boardNext, &wg)
+		go life(X/2,   3*X/4, Y/2, 3*Y/4, board, boardNext, &wg)
+		go life(3*X/4, X,     Y/2, 3*Y/4, board, boardNext, &wg)
+		go life(0,     X/4,   3*Y/4, Y,   board, boardNext, &wg)
+		go life(X/4,   X/2,   3*Y/4, Y,   board, boardNext, &wg)
+		go life(X/2,   3*X/4, 3*Y/4, Y,   board, boardNext, &wg)
+		go life(3*X/4, X,     3*Y/4, Y,   board, boardNext, &wg)
 
 		for x := 0; x < X; x++ {
 			for y := 0; y < Y; y++ {
@@ -63,48 +86,10 @@ func run() {
 					imd.Push(pixel.V(float64(x+1), float64(y+1)))
 					imd.Rectangle(0)
 				}
-				neighbors := 0
-				if x > 0 {
-					if y > 0 && board[x-1][y-1] {
-						neighbors++
-					}
-					if y < Y-1 && board[x-1][y+1] {
-						neighbors++
-					}
-					if board[x-1][y] {
-						neighbors++
-					}
-				}
 
-				if x < X-1 {
-					if y > 0 && board[x+1][y-1] {
-						neighbors++
-					}
-					if y < Y-1 && board[x+1][y+1] {
-						neighbors++
-					}
-					if board[x+1][y] {
-						neighbors++
-					}
-				}
-				if y > 0 && board[x][y-1] {
-					neighbors++
-				}
-				if y < Y-1 && board[x][y+1] {
-					neighbors++
-				}
-
-				if board[x][y] {
-					if neighbors == 2 || neighbors == 3 {
-						boardNext[x][y] = true
-					}
-				} else {
-					if neighbors == 3 {
-						boardNext[x][y] = true
-					}
-				}
 			}
 		}
+		wg.Wait()
 		board = boardNext
 		imd.Draw(win)
 
@@ -115,5 +100,46 @@ func run() {
 		basicTxt.Draw(win, pixel.IM.Scaled(basicTxt.Orig, 3))
 
 		win.Update()
+	}
+}
+
+func life(xlo int, xhi int, ylo int, yhi int, board [][]bool, boardNext [][]bool, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	for x := xlo; x < xhi; x++ {
+		for y := ylo; y < yhi; y++ {
+			neighbors := 0
+			for nx := x - 1; nx <= x+1; nx++ {
+				for ny := y - 1; ny <= y+1; ny++ {
+					x0 := nx
+					y0 := ny
+					if x0 == -1 {
+						x0 = X - 1
+					}
+					if y0 == -1 {
+						y0 = Y - 1
+					}
+					if x0 == X {
+						x0 = 0
+					}
+					if y0 == Y {
+						y0 = 0
+					}
+					//fmt.Println(x,nx,x0,y,ny,y0)
+					if !(x0 == x && y0 == y) && board[x0][y0] {
+						neighbors++
+					}
+				}
+			}
+			if board[x][y] {
+				if neighbors == 2 || neighbors == 3 {
+					boardNext[x][y] = true
+				}
+			} else {
+				if neighbors == 3 {
+					boardNext[x][y] = true
+				}
+			}
+		}
 	}
 }
